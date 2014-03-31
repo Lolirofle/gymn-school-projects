@@ -13,6 +13,10 @@ import qualified Data.Binary.Get as Binary.Get
 import qualified Data.ByteString.Lazy as ByteString.Lazy
 import Data.Char (ord,chr)
 
+import Control.Monad
+import Data.Functor
+import Control.Applicative
+
 -- |Graph Edge structure. Represents the edges of a graph
 data GraphEdge a cost = GraphEdge a a cost
 
@@ -171,28 +175,38 @@ findPath_djikstra' from to graph boxed =
 
 exportData :: (a -> Binary.Word32) -> AdjacencyGraph a b -> Binary.Put
 exportData valueToWord graph = mapM_ serializeEdge graph where
+	-- Function that serializes a single edge
 	serializeEdge edge = do
 		Binary.Put.putWord32be (valueToWord (getFrom edge))
 		Binary.Put.putWord32be (valueToWord (getTo edge))
 
-importData :: (Binary.Word32 -> a) -> Binary.Get (GraphEdge a Int)
+importData :: (Binary.Word32 -> a) -> Binary.Get (AdjacencyGraph a Int)
 importData wordToValue = do
-	from <- Binary.Get.getWord32be
-	to <- Binary.Get.getWord32be
-	return (GraphEdge (wordToValue from) (wordToValue to) 0)
+	-- If EOF
+	empty <- Binary.Get.isEmpty
+	if empty then 
+		-- Return an empty list encapsulated in the Binary.Get monad
+		return []
+	else do
+		-- Return a list of edges, recursively reading all the values from the file
+		edge <- (fmap (GraphEdge) (liftM wordToValue Binary.Get.getWord32be) <*> (liftM wordToValue Binary.Get.getWord32be) <*> (pure 0))
+		edges <- importData wordToValue
+		return (edge:edges)
 
 main :: IO ()
 main = do
-{--	file <- openBinaryFile "djikstra_example_graph.dat" WriteMode
+{--	-- Import file
+	file <- openBinaryFile "djikstra_example_graph.dat" WriteMode
 	ByteString.Lazy.hPut file (Binary.Put.runPut $ exportData (fromIntegral . ord) graph)
 	hClose file
 --}
-
+{--	-- Export file
 	file <- openBinaryFile "djikstra_example_graph.dat" ReadMode
 	rawData <- ByteString.Lazy.hGetContents file
 	let importedGraph = Binary.Get.runGet (importData (chr . fromIntegral)) rawData
 	print importedGraph
 	hClose file
+--}
 
 	putStrLn $ "Edges: "      ++ (show $ edges graph)
 {--	putStrLn $ "Size: "       ++ (show $ size graph)
@@ -203,13 +217,13 @@ main = do
 	putStrLn $ "Connected values: " ++ (show $ connectedValues graph)
 	putStrLn $ "Start values: " ++ (show $ startValues graph)
 	putStrLn $ "End values: "   ++ (show $ endValues graph)
---}	putStrLn $ "Walk max cost path: " ++ (show $ take 10 $ walk (getTo . (maximumBy (comparing getCost))) graph 'A')
-	putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
+--}	--putStrLn $ "Walk max cost path: " ++ (show $ take 10 $ walk (getTo . (maximumBy (comparing getCost))) graph 'A')
+	--putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
 	putStrLn $ "Minimum Spanning Tree (Kruskal): "  ++ (show $ minimumSpanning_kruskal (comparing getCost) graph)
-	putStrLn $ "Path 1 -> 3 (Djikstra): "  ++ (show $ findPath_djikstra 'A' 'B' graph)
+	--putStrLn $ "Path 1 -> 3 (Djikstra): "  ++ (show $ findPath_djikstra 'A' 'B' graph)
 	where
 		graph = 
-			GraphEdge 'A' 'B' 6 :
+			{--GraphEdge 'A' 'B' 6 :
 			GraphEdge 'A' 'C' 3 :
 
 			GraphEdge 'B' 'A' 6 :
@@ -234,6 +248,32 @@ main = do
 			
 			GraphEdge 'G' 'D' 10 :
 			GraphEdge 'G' 'E' 4 :
-			GraphEdge 'G' 'F' 2 :
+			GraphEdge 'G' 'F' 2 :--}
+
+			GraphEdge 1 2 6 : 
+			GraphEdge 1 3 1 : 
+			GraphEdge 1 4 5 : 
+
+			GraphEdge 2 1 6 : 
+			GraphEdge 2 3 5 : 
+			GraphEdge 2 5 3 : 
+
+			GraphEdge 3 1 1 : 
+			GraphEdge 3 2 5 : 
+			GraphEdge 3 4 5 : 
+			GraphEdge 3 5 6 : 
+			GraphEdge 3 6 4 : 
+
+			GraphEdge 4 1 5 : 
+			GraphEdge 4 3 5 : 
+			GraphEdge 4 6 2 : 
+
+			GraphEdge 5 2 3 :
+			GraphEdge 5 3 6 :
+			GraphEdge 5 6 6 :
+
+			GraphEdge 6 3 4 :
+			GraphEdge 6 4 2 :
+			GraphEdge 6 5 6 :
 
 			[]
