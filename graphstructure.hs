@@ -17,6 +17,8 @@ import Control.Monad
 import Data.Functor
 import Control.Applicative
 
+import System.IO.Unsafe
+
 -- |Graph Edge structure. Represents the edges of a graph
 data GraphEdge a cost = GraphEdge a a cost
 
@@ -143,7 +145,7 @@ findPaths from to graph = findPaths' from to graph [] where
 			-- If already checked the `fromValue` before in the path, skip and avoid infinite loop
 			if elem fromValue path then
 				result
-			-- If the searched from value is found, then it is at the beginning and should construct the list entry of the path
+			-- If the searched from value is found, then it is at the beginning and shoorduld construct the list entry of the path
 			else
 				let newPath = to : path in
 				if fromValue==from then
@@ -152,13 +154,23 @@ findPaths from to graph = findPaths' from to graph [] where
 				else
 					result ++ (findPaths' from fromValue graph (newPath))
 
--- Works with undirected graphs, but we have directed. Also, it may be able to be optimized if it knows that the graph already is spanned in the middle of the fold
--- TODO: Checking for loop correctly using a forest. It checks every tree in the forest when creating a new edge, looking for the to value. If it is found, then merge the two trees into one and do tis until there's one left. That's when the tree is finished and no more edges are neccessary to add.
+-- |Lists all vertices that are connected to v, all of the vertices on its tree
+verticesInTreeOf :: Eq a => a -> AdjacencyGraph a b -> [a]
+verticesInTreeOf v graph = foldl f [v] (fromValuesTo v graph) where
+		f result fromValue =
+			-- If already checked the `fromValue` before
+			if elem fromValue result then
+				result
+			else
+				foldl f (fromValue:result) (fromValuesTo fromValue graph)
+
+-- Simple implementation of Kruskals minimum spanning tree algorithm. It may be possible to optimize if it can anknowledge that the graph already is spanned in the middle of the fold
 minimumSpanning_kruskal :: (Eq a) => (GraphEdge a b -> GraphEdge a b -> Ordering) -> AdjacencyGraph a b -> AdjacencyGraph a b
-minimumSpanning_kruskal compareFunc graph = foldl connected [] sorted where
+minimumSpanning_kruskal compareFunc graph = foldl buildMstAvoidingCycles [] sorted where
+	-- The cost sorted list
 	sorted = sortBy compareFunc graph
-	connected result edge = 
-		if isJust $ find (\e -> getTo edge == getFrom e || getFrom edge == getFrom e) result then
+	buildMstAvoidingCycles result edge = 
+		if elem (getFrom edge) (verticesInTreeOf (getTo edge) result) then
 			result
 		else
 			edge : result
@@ -195,12 +207,12 @@ importData wordToValue = do
 
 main :: IO ()
 main = do
-{--	-- Import file
-	file <- openBinaryFile "djikstra_example_graph.dat" WriteMode
+	-- Export file
+{--	file <- openBinaryFile "kruskal_example_graph_wikipedia.dat" WriteMode
 	ByteString.Lazy.hPut file (Binary.Put.runPut $ exportData (fromIntegral . ord) graph)
 	hClose file
 --}
-{--	-- Export file
+{--	-- Import file
 	file <- openBinaryFile "djikstra_example_graph.dat" ReadMode
 	rawData <- ByteString.Lazy.hGetContents file
 	let importedGraph = Binary.Get.runGet (importData (chr . fromIntegral)) rawData
@@ -221,6 +233,7 @@ main = do
 	--putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
 	putStrLn $ "Minimum Spanning Tree (Kruskal): "  ++ (show $ minimumSpanning_kruskal (comparing getCost) graph)
 	--putStrLn $ "Path 1 -> 3 (Djikstra): "  ++ (show $ findPath_djikstra 'A' 'B' graph)
+	--putStrLn $ "Vertices in tree of D: " ++ (show $ take 10 (verticesInTreeOf 'F' graph))
 	where
 		graph = 
 			{--GraphEdge 'A' 'B' 6 :
