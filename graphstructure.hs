@@ -181,21 +181,46 @@ minimumSpanning_kruskal compareFunc graph = foldl buildMstAvoidingCycles [] sort
 -- |   pathCost            : The cost for getting from the specified vertex (`from`) to this vertex
 -- |   previousVertexInPath: By following all the previous vertices, a path is created which also is the cheapest route
 -- |   permanent           : Used internally in the function
-findPath_djikstra :: (Eq a,Num b,Ord b) => a -> AdjacencyGraph a b -> [(a,b,Maybe a,Bool)]
-findPath_djikstra from graph = updateBoxed [(from,0,Nothing,True)] where
+data DjikstraGraphBox a cost = DjikstraGraphBox a cost (Maybe a) Bool deriving (Eq,Show)
+
+djikstraPath_costTo :: Eq a => a -> [DjikstraGraphBox a b] -> Maybe b
+djikstraPath_costTo to paths = case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex==to) paths) of
+	Just (DjikstraGraphBox _ cost _ _) -> Just cost
+	Nothing -> Nothing
+
+djikstraPath_from :: [DjikstraGraphBox a b] -> a
+djikstraPath_from paths = case (find (\(DjikstraGraphBox _ _ prev _) -> isNothing prev) paths) of
+	Just (DjikstraGraphBox vertex _ _ _) -> vertex
+	Nothing -> error "djikstraPath_from: Cannot find the from vertex"
+
+djikstraPath_pathTo :: Eq a => a -> [DjikstraGraphBox a b] -> [a]
+djikstraPath_pathTo to paths = case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex==to) paths) of
+	Just (DjikstraGraphBox _ _ prev _) -> case prev of
+		Just v  -> to : (djikstraPath_pathTo v paths)
+		Nothing -> to : []
+	Nothing -> error "djikstraPath_pathTo: Invalid path description. Cannot find a vertex from the previousVertexInPath field"
+
+findPath_djikstra :: (Eq a,Num b,Ord b) => a -> AdjacencyGraph a b -> [DjikstraGraphBox a b]
+findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True] where
+	lengthAtLeast :: Int -> [a] -> Bool
+	lengthAtLeast 0 _        = True
+	lengthAtLeast _ []       = False
+	lengthAtLeast n (_:tail) = lengthAtLeast (n-1) tail
+
 	updateBoxed initialBoxed =
-		if (isNothing $ find (\(_,_,previousVertexInPath,permanent) -> not permanent) initialBoxed) && (length initialBoxed)>1 then
+		-- While there's still non-permanent boxes and it isn't the first loop
+		if (isNothing $ find (\(DjikstraGraphBox _ _ previousVertexInPath permanent) -> not permanent) initialBoxed) && (lengthAtLeast 2 initialBoxed) then
 			initialBoxed
 		else
-			updateBoxed (permanentBoxCheapest $ foldl selectBoxed initialBoxed (edgesOf (vertexOfBox $ head initialBoxed) graph)) where
+			updateBoxed (permanentBoxCheapest $ foldl selectBoxed initialBoxed (toEdgesFrom (vertexOfBox $ head initialBoxed) graph)) where
 				-- The boxed values that are non permanent
-				nonPermanentBoxed boxed = (filter (\(_,_,_,permanent) -> not permanent) boxed)
+				nonPermanentBoxed boxed = (filter (\(DjikstraGraphBox _ _ _ permanent) -> not permanent) boxed)
 
 				-- Extracts the vertex from a box
-				vertexOfBox (vertex,_,_,_) = vertex
+				vertexOfBox (DjikstraGraphBox vertex _ _ _) = vertex
 
 				-- Extracts the path cost from a box
-				pathCostOfBox (_,pathCost,_,_) = pathCost
+				pathCostOfBox (DjikstraGraphBox _ pathCost _ _) = pathCost
 
 				-- Replaces the cheapest box to a permanent version of it
 				permanentBoxCheapest boxed = (permanentBox cheapest) : (delete cheapest boxed) where
@@ -203,17 +228,16 @@ findPath_djikstra from graph = updateBoxed [(from,0,Nothing,True)] where
 					cheapest = minimumBy (comparing pathCostOfBox) (nonPermanentBoxed boxed)
 
 					-- Returns a permanent version of the given box
-					permanentBox (vertex,pathCost,previousVertexInPath,_) = (vertex,pathCost,previousVertexInPath,True)
+					permanentBox (DjikstraGraphBox vertex pathCost previousVertexInPath _) = (DjikstraGraphBox vertex pathCost previousVertexInPath True)
 
 				selectBoxed boxed (GraphEdge from to cost) =
-					case (find (\(vertex,_,_,_) -> vertex == from) boxed) of
-						Just (previousVertex,previousPathCost,previousVertexInPath,previousPermanent) -> 
-							let newPathCost = cost + previousPathCost in
-
-							if previousPermanent then
-								boxed
-							else
-								(to,newPathCost,Just from,False) : boxed
+					case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex == from) boxed) of
+						Just (DjikstraGraphBox previousVertex previousPathCost previousVertexInPath previousPermanent) -> 
+							-- Look for a box with the same vertex and skip it if it's a permanent or the cost is higher
+							let newBox = (DjikstraGraphBox to (cost+previousPathCost) (Just previousVertex) False) in
+							case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex == to) boxed) of
+								Just box@(DjikstraGraphBox _ pathCost _ permanent) -> if (pathCostOfBox newBox)>pathCost || permanent then boxed else newBox : (delete box boxed)
+								Nothing -> newBox : boxed
 						Nothing -> boxed
 
 exportData :: (a -> Binary.Word32) -> AdjacencyGraph a b -> Binary.Put
@@ -263,7 +287,15 @@ main = do
 --}	--putStrLn $ "Walk max cost path: " ++ (show $ take 10 $ walk (getTo . (maximumBy (comparing getCost))) graph 'A')
 	--putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
 	putStrLn $ "Minimum Spanning Tree (Kruskal): "  ++ (show $ minimumSpanning_kruskal (comparing getCost) graph)
-	putStrLn $ "Path from A (Djikstra): "  ++ (show $ findPath_djikstra 'A' graph)
+	
+	let djikstraPaths = findPath_djikstra 'A' graph in do
+		putStrLn $ "Djikstra: Paths from A: " ++ (show $ djikstraPaths)
+		putStrLn $ "Djikstra: From: " ++ (show $ djikstraPath_from djikstraPaths)
+		putStrLn $ "Djikstra: Cost to D: " ++ (show $ djikstraPath_costTo 'D' djikstraPaths)
+		putStrLn $ "Djikstra: Cost to O: " ++ (show $ djikstraPath_costTo 'O' djikstraPaths)
+		putStrLn $ "Djikstra: Path to D: " ++ (show $ djikstraPath_pathTo 'D' djikstraPaths)
+
+		
 	--putStrLn $ "Vertices in tree of D: " ++ (show $ take 10 (verticesInTreeOf 'F' graph))
 	where
 		graph = 
