@@ -175,15 +175,46 @@ minimumSpanning_kruskal compareFunc graph = foldl buildMstAvoidingCycles [] sort
 		else
 			edge : result
 
-findPath_djikstra :: (Eq a,Num b,Ord b) => a -> a -> AdjacencyGraph a b -> [a]
-findPath_djikstra from to graph = findPath_djikstra' from to graph (Map.singleton from 0)
+-- |The list of tuples returned that represents a "box" have the following fields:
+-- |(vertex,pathCost,previousVertexInPath,permanent)
+-- |   vertex              : The vertex the current box represents
+-- |   pathCost            : The cost for getting from the specified vertex (`from`) to this vertex
+-- |   previousVertexInPath: By following all the previous vertices, a path is created which also is the cheapest route
+-- |   permanent           : Used internally in the function
+findPath_djikstra :: (Eq a,Num b,Ord b) => a -> AdjacencyGraph a b -> [(a,b,Maybe a,Bool)]
+findPath_djikstra from graph = updateBoxed [(from,0,Nothing,True)] where
+	updateBoxed initialBoxed =
+		if (isNothing $ find (\(_,_,previousVertexInPath,permanent) -> not permanent) initialBoxed) && (length initialBoxed)>1 then
+			initialBoxed
+		else
+			updateBoxed (permanentBoxCheapest $ foldl selectBoxed initialBoxed (edgesOf (vertexOfBox $ head initialBoxed) graph)) where
+				-- The boxed values that are non permanent
+				nonPermanentBoxed boxed = (filter (\(_,_,_,permanent) -> not permanent) boxed)
 
-findPath_djikstra' :: (Eq a,Num b,Ord b) => a -> a -> AdjacencyGraph a b -> Map.Map a b -> [a]
-findPath_djikstra' from to graph boxed = 
-	let adjacentToFrom = toEdgesFrom from graph
-	    nextBox = getFrom $ minimumBy (comparing getCost) adjacentToFrom
-	    nextBoxed = boxed
-	in nextBox : []
+				-- Extracts the vertex from a box
+				vertexOfBox (vertex,_,_,_) = vertex
+
+				-- Extracts the path cost from a box
+				pathCostOfBox (_,pathCost,_,_) = pathCost
+
+				-- Replaces the cheapest box to a permanent version of it
+				permanentBoxCheapest boxed = (permanentBox cheapest) : (delete cheapest boxed) where
+					-- The box that has the cheapest path cost
+					cheapest = minimumBy (comparing pathCostOfBox) (nonPermanentBoxed boxed)
+
+					-- Returns a permanent version of the given box
+					permanentBox (vertex,pathCost,previousVertexInPath,_) = (vertex,pathCost,previousVertexInPath,True)
+
+				selectBoxed boxed (GraphEdge from to cost) =
+					case (find (\(vertex,_,_,_) -> vertex == from) boxed) of
+						Just (previousVertex,previousPathCost,previousVertexInPath,previousPermanent) -> 
+							let newPathCost = cost + previousPathCost in
+
+							if previousPermanent then
+								boxed
+							else
+								(to,newPathCost,Just from,False) : boxed
+						Nothing -> boxed
 
 exportData :: (a -> Binary.Word32) -> AdjacencyGraph a b -> Binary.Put
 exportData valueToWord graph = mapM_ serializeEdge graph where
@@ -208,7 +239,7 @@ importData wordToValue = do
 main :: IO ()
 main = do
 	-- Export file
-{--	file <- openBinaryFile "kruskal_example_graph_wikipedia.dat" WriteMode
+{--	file <- openBinaryFile "djikstra_example_graph2.dat" WriteMode
 	ByteString.Lazy.hPut file (Binary.Put.runPut $ exportData (fromIntegral . ord) graph)
 	hClose file
 --}
@@ -232,61 +263,39 @@ main = do
 --}	--putStrLn $ "Walk max cost path: " ++ (show $ take 10 $ walk (getTo . (maximumBy (comparing getCost))) graph 'A')
 	--putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
 	putStrLn $ "Minimum Spanning Tree (Kruskal): "  ++ (show $ minimumSpanning_kruskal (comparing getCost) graph)
-	--putStrLn $ "Path 1 -> 3 (Djikstra): "  ++ (show $ findPath_djikstra 'A' 'B' graph)
+	putStrLn $ "Path from A (Djikstra): "  ++ (show $ findPath_djikstra 'A' graph)
 	--putStrLn $ "Vertices in tree of D: " ++ (show $ take 10 (verticesInTreeOf 'F' graph))
 	where
 		graph = 
-			{--GraphEdge 'A' 'B' 6 :
-			GraphEdge 'A' 'C' 3 :
+			GraphEdge 'A' 'B' 4 :
+			GraphEdge 'A' 'G' 8 :
+			GraphEdge 'A' 'F' 10 :
 
-			GraphEdge 'B' 'A' 6 :
-			GraphEdge 'B' 'E' 8 :
+			GraphEdge 'B' 'A' 4 :
+			GraphEdge 'B' 'G' 2 :
+			GraphEdge 'B' 'C' 3 :
 
-			GraphEdge 'C' 'A' 3 :
-			GraphEdge 'C' 'D' 5 :
-			GraphEdge 'C' 'E' 5 :
+			GraphEdge 'C' 'B' 3 :
+			GraphEdge 'C' 'G' 8 :
+			GraphEdge 'C' 'D' 13 :
+
+			GraphEdge 'D' 'C' 8 :
+			GraphEdge 'D' 'G' 15 :
+			GraphEdge 'D' 'E' 2 :
+
+			GraphEdge 'E' 'F' 6 :
+			GraphEdge 'E' 'G' 11 :
+			GraphEdge 'E' 'D' 2 :
+
+			GraphEdge 'F' 'A' 10 :
+			GraphEdge 'F' 'G' 4 :
+			GraphEdge 'F' 'E' 6 :
 			
-			GraphEdge 'D' 'C' 5 :
-			GraphEdge 'D' 'E' 3 :
-			GraphEdge 'D' 'G' 10 :
-
-			GraphEdge 'E' 'B' 8 :
-			GraphEdge 'E' 'C' 5 :
-			GraphEdge 'E' 'D' 3 :
-			GraphEdge 'E' 'F' 5 :
-			GraphEdge 'E' 'G' 4 :
-
-			GraphEdge 'F' 'E' 5 :
-			GraphEdge 'F' 'G' 2 :
-			
-			GraphEdge 'G' 'D' 10 :
-			GraphEdge 'G' 'E' 4 :
-			GraphEdge 'G' 'F' 2 :--}
-
-			GraphEdge 1 2 6 : 
-			GraphEdge 1 3 1 : 
-			GraphEdge 1 4 5 : 
-
-			GraphEdge 2 1 6 : 
-			GraphEdge 2 3 5 : 
-			GraphEdge 2 5 3 : 
-
-			GraphEdge 3 1 1 : 
-			GraphEdge 3 2 5 : 
-			GraphEdge 3 4 5 : 
-			GraphEdge 3 5 6 : 
-			GraphEdge 3 6 4 : 
-
-			GraphEdge 4 1 5 : 
-			GraphEdge 4 3 5 : 
-			GraphEdge 4 6 2 : 
-
-			GraphEdge 5 2 3 :
-			GraphEdge 5 3 6 :
-			GraphEdge 5 6 6 :
-
-			GraphEdge 6 3 4 :
-			GraphEdge 6 4 2 :
-			GraphEdge 6 5 6 :
+			GraphEdge 'G' 'A' 8 :
+			GraphEdge 'G' 'B' 2 :
+			GraphEdge 'G' 'C' 8 :
+			GraphEdge 'G' 'D' 15 :
+			GraphEdge 'G' 'E' 11 :
+			GraphEdge 'G' 'F' 4 :
 
 			[]
