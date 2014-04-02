@@ -200,6 +200,7 @@ djikstraPath_pathTo to paths = case (find (\(DjikstraGraphBox vertex _ _ _) -> v
 		Nothing -> to : []
 	Nothing -> error "djikstraPath_pathTo: Invalid path description. Cannot find a vertex from the previousVertexInPath field"
 
+-- TODO: Not optimized. Doesn't work for negative numbers? (E.g. 1+2 = 3, sum is greater. -1+-2 = -3, sum is lesser)
 findPath_djikstra :: (Eq a,Num b,Ord b) => a -> AdjacencyGraph a b -> [DjikstraGraphBox a b]
 findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True] where
 	lengthAtLeast :: Int -> [a] -> Bool
@@ -232,12 +233,16 @@ findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True
 
 				selectBoxed boxed (GraphEdge from to cost) =
 					case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex == from) boxed) of
-						Just (DjikstraGraphBox previousVertex previousPathCost previousVertexInPath previousPermanent) -> 
-							-- Look for a box with the same vertex and skip it if it's a permanent or the cost is higher
+						Just (DjikstraGraphBox previousVertex previousPathCost _ _) -> 
+							-- Look for a box with the same vertex
 							let newBox = (DjikstraGraphBox to (cost+previousPathCost) (Just previousVertex) False) in
 							case (find (\(DjikstraGraphBox vertex _ _ _) -> vertex == to) boxed) of
-								Just box@(DjikstraGraphBox _ pathCost _ permanent) -> if (pathCostOfBox newBox)>pathCost || permanent then boxed else newBox : (delete box boxed)
-								Nothing -> newBox : boxed
+								-- If found and it's permanent or the new cost is higher than the old, keep boxed as it is
+								Just box@(DjikstraGraphBox _ pathCost _ permanent) | (pathCostOfBox newBox)>pathCost || permanent -> boxed
+								-- If it doesn't hold for the criteria above but still exists, modify (remove, construct and insert) the box
+								Just box -> newBox : (delete box boxed)
+								-- If it's a vertex that hasn't been boxed yet, insert it
+								Nothing  -> newBox : boxed
 						Nothing -> boxed
 
 exportData :: (a -> Binary.Word32) -> AdjacencyGraph a b -> Binary.Put
