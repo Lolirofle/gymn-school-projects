@@ -1,4 +1,4 @@
-module Graph where
+module EdgeGraph where
 
 import System.Environment
 import System.IO
@@ -17,8 +17,6 @@ import Control.Monad
 import Data.Functor
 import Control.Applicative
 
-import System.IO.Unsafe
-
 -- |Graph Edge structure. Represents the edges of a graph
 data GraphEdge a cost = GraphEdge a a cost
 
@@ -26,13 +24,13 @@ getFrom (GraphEdge from _ _) = from
 getTo   (GraphEdge _ to _)   = to
 getCost (GraphEdge _ _ cost) = cost
 
-getFroms :: AdjacencyGraph a b -> [a]
+getFroms :: EdgeGraph a b -> [a]
 getFroms = map getFrom
 
-getTos   :: AdjacencyGraph a b -> [a]
+getTos   :: EdgeGraph a b -> [a]
 getTos   = map getTo
 
-getCosts :: AdjacencyGraph a b -> [b]
+getCosts :: EdgeGraph a b -> [b]
 getCosts = map getCost
 
 -- |Implementation of equality
@@ -55,97 +53,100 @@ instance (Show a,Show b) => Show (GraphEdge a b) where
 data GraphPath a b = GraphPath {path::[a],costs::[b]}
 emptyPath = GraphPath {path = [],costs = []}
 
-type AdjacencyGraph node cost = [GraphEdge node cost]
+type EdgeGraph node cost = [GraphEdge node cost]
 
 -- |Size of graph (Number of edges)
-size :: AdjacencyGraph a b -> Int
+size :: EdgeGraph a b -> Int
 size = length
 
 -- |Edges in the graph
-edges :: AdjacencyGraph a b -> AdjacencyGraph a b
+edges :: EdgeGraph a b -> EdgeGraph a b
 edges = id
 
 -- |Vertices in the graph
-vertices :: Eq a => AdjacencyGraph a b -> [a]
+vertices :: Eq a => EdgeGraph a b -> [a]
 vertices edges = foldl buildUnique [] edges where
 	buildUnique result (GraphEdge from to _) = 
 		(if (elem from result) then result2 else from:result2) where result2 = (if (elem to result) then result else to:result)
 
 -- |Order of graph (Number of vertices)
-order :: Eq a => AdjacencyGraph a b -> Int
+order :: Eq a => EdgeGraph a b -> Int
 order = length . vertices
 
 -- |Graph with specific edge added
-addEdge :: Eq a => GraphEdge a b -> AdjacencyGraph a b -> AdjacencyGraph a b
+addEdge :: Eq a => GraphEdge a b -> EdgeGraph a b -> EdgeGraph a b
 addEdge edge edges = if (elem edge edges) then edges else edge:edges
 
 -- |Graph with specific edge removed
-removeEdge :: Eq a => GraphEdge a b -> AdjacencyGraph a b -> AdjacencyGraph a b
+removeEdge :: Eq a => GraphEdge a b -> EdgeGraph a b -> EdgeGraph a b
 removeEdge = delete
 
--- |The edges of a value
-edgesOf :: Eq a => a -> AdjacencyGraph a b -> [GraphEdge a b]
-edgesOf value edges = (filter (\(GraphEdge from to _) -> from == value || to == value) edges)
+-- |The edges of a label
+edgesOf :: Eq a => a -> EdgeGraph a b -> [GraphEdge a b]
+edgesOf label edges = (filter (\(GraphEdge from to _) -> from == label || to == label) edges)
 
--- |The to values of a from value
-toEdgesFrom :: Eq a => a -> AdjacencyGraph a b -> [GraphEdge a b]
-toEdgesFrom value edges = filter (\(GraphEdge from _ _) -> from == value) edges
+-- |The to labels of a from label
+toEdgesFrom :: Eq a => a -> EdgeGraph a b -> [GraphEdge a b]
+toEdgesFrom label edges = filter (\(GraphEdge from _ _) -> from == label) edges
 
--- |The from values of a to value
-fromEdgesTo :: Eq a => a -> AdjacencyGraph a b -> [GraphEdge a b]
-fromEdgesTo value edges = filter (\(GraphEdge _ to _) -> to == value) edges
+-- |The from labels of a to label
+fromEdgesTo :: Eq a => a -> EdgeGraph a b -> [GraphEdge a b]
+fromEdgesTo label edges = filter (\(GraphEdge _ to _) -> to == label) edges
 
--- |The to values of a from value
-toValuesFrom :: Eq a => a -> AdjacencyGraph a b -> [a]
-toValuesFrom value edges = map getTo (toEdgesFrom value edges)
+-- |The to labels of a from label
+toLabelsFrom :: Eq a => a -> EdgeGraph a b -> [a]
+toLabelsFrom label edges = map getTo (toEdgesFrom label edges)
 
--- |The from values of a to value
-fromValuesTo :: Eq a => a -> AdjacencyGraph a b -> [a]
-fromValuesTo value edges = map getFrom (fromEdgesTo value edges)
+-- |The from labels of a to label
+fromLabelsTo :: Eq a => a -> EdgeGraph a b -> [a]
+fromLabelsTo label edges = map getFrom (fromEdgesTo label edges)
 
 -- |The path it walks when the `routeChooser` is applied at every intersection
-walk :: Eq a => (AdjacencyGraph a b -> a) -> AdjacencyGraph a b -> a -> [a]
+walk :: Eq a => (EdgeGraph a b -> a) -> EdgeGraph a b -> a -> [a]
 walk routeChooser graph start = if null routes then [start] else start:(walk routeChooser graph (routeChooser routes)) where
 	routes = toEdgesFrom start graph
 
 -- |The path it walks backwards when the `routeChooser` is applied at every intersection
-walkBackwards :: Eq a => (AdjacencyGraph a b -> a) -> AdjacencyGraph a b -> a -> [a]
+walkBackwards :: Eq a => (EdgeGraph a b -> a) -> EdgeGraph a b -> a -> [a]
 walkBackwards routeChooser graph start = if null routes then [start] else start:(walk routeChooser graph (routeChooser routes)) where
 	routes = fromEdgesTo start graph
 
 
--- |The start vertices. No values point to these (High complexity because of nub and the elem in the filter?)
-startValues :: Eq a => AdjacencyGraph a b -> [a]
-startValues graph = filter (`notElem` (getTos graph)) (nub $ (getFroms graph))
+-- |The start vertices. No labels point to these (High complexity because of nub and the elem in the filter?)
+startVertices :: Eq a => EdgeGraph a b -> [a]
+startVertices graph = filter (`notElem` (getTos graph)) (nub $ (getFroms graph))
 
--- |The end vertices. No values start these (High complexity because of nub and the elem in the filter?)
-endValues :: Eq a => AdjacencyGraph a b -> [a]
-endValues graph = filter (`notElem` (getFroms graph)) (nub $ (getTos graph))
+-- |The end vertices. No labels start these (High complexity because of nub and the elem in the filter?)
+endVertices :: Eq a => EdgeGraph a b -> [a]
+endVertices graph = filter (`notElem` (getFroms graph)) (nub $ (getTos graph))
 
 -- |The connected vertices that is neither a start or end vertex.
-connectedValues :: Eq a => AdjacencyGraph a b -> [a]
-connectedValues graph = nub (uncurry intersect (unzip (map (\edge -> (getFrom edge,getTo edge)) graph)))
+internalVertices :: Eq a => EdgeGraph a b -> [a]
+internalVertices graph = nub (uncurry intersect (unzip (map (\edge -> (getFrom edge,getTo edge)) graph)))
 
-getEdge :: Eq a => a -> a -> AdjacencyGraph a b -> Maybe (GraphEdge a b)
+isInternalVertex :: Eq a => a -> EdgeGraph a b -> Bool
+isInternalVertex vertex graph = isJust $ find (\edge -> (getFrom edge)/=vertex && (getTo edge)/=vertex) graph
+
+getEdge :: Eq a => a -> a -> EdgeGraph a b -> Maybe (GraphEdge a b)
 getEdge from to graph = find (\edge -> from == getFrom edge && to == getTo edge) graph
 
 --TODO: This should behave differently if an undirected graph is implemented
-isAdjacent :: Eq a => a -> a -> AdjacencyGraph a b -> Bool
+isAdjacent :: Eq a => a -> a -> EdgeGraph a b -> Bool
 isAdjacent a b graph = isJust (getEdge a b graph)
 
 -- |Simplifies a graph by summing the costs and having as few intersections and paths as possible
---simplify :: (b -> b -> b) -> AdjacencyGraph a b -> AdjacencyGraph a b
---simplify costSumFunc graph = 
+--simplify :: (a -> a -> Maybe a) -> (b -> b -> b) -> EdgeGraph a b -> EdgeGraph a b
+--simplify vertexSumFunc costSumFunc graph = 
 
--- |Finds all paths from one value to another value
-findPaths :: Eq a => a -> a -> AdjacencyGraph a b -> [[a]]
+-- |Finds all paths from one label to another label
+findPaths :: Eq a => a -> a -> EdgeGraph a b -> [[a]]
 findPaths from to graph = findPaths' from to graph [] where
-	findPaths' from to graph path = foldl f [] (fromValuesTo to graph) where
+	findPaths' from to graph path = foldl f [] (fromLabelsTo to graph) where
 		f result fromValue =
 			-- If already checked the `fromValue` before in the path, skip and avoid infinite loop
 			if elem fromValue path then
 				result
-			-- If the searched from value is found, then it is at the beginning and shoorduld construct the list entry of the path
+			-- If the searched from label is found, then it is at the beginning and shoorduld construct the list entry of the path
 			else
 				let newPath = to : path in
 				if fromValue==from then
@@ -155,17 +156,17 @@ findPaths from to graph = findPaths' from to graph [] where
 					result ++ (findPaths' from fromValue graph (newPath))
 
 -- |Lists all vertices that are connected to v, all of the vertices on its tree
-verticesInTreeOf :: Eq a => a -> AdjacencyGraph a b -> [a]
-verticesInTreeOf v graph = foldl f [v] (fromValuesTo v graph) where
+verticesInTreeOf :: Eq a => a -> EdgeGraph a b -> [a]
+verticesInTreeOf v graph = foldl f [v] (fromLabelsTo v graph) where
 		f result fromValue =
 			-- If already checked the `fromValue` before
 			if elem fromValue result then
 				result
 			else
-				foldl f (fromValue:result) (fromValuesTo fromValue graph)
+				foldl f (fromValue:result) (fromLabelsTo fromValue graph)
 
 -- Simple implementation of Kruskals minimum spanning tree algorithm. It may be possible to optimize if it can anknowledge that the graph already is spanned in the middle of the fold
-minimumSpanning_kruskal :: (Eq a) => (GraphEdge a b -> GraphEdge a b -> Ordering) -> AdjacencyGraph a b -> AdjacencyGraph a b
+minimumSpanning_kruskal :: (Eq a) => (GraphEdge a b -> GraphEdge a b -> Ordering) -> EdgeGraph a b -> EdgeGraph a b
 minimumSpanning_kruskal compareFunc graph = foldl buildMstAvoidingCycles [] sorted where
 	-- The cost sorted list
 	sorted = sortBy compareFunc graph
@@ -201,7 +202,7 @@ djikstraPath_pathTo to paths = case (find (\(DjikstraGraphBox vertex _ _ _) -> v
 	Nothing -> error "djikstraPath_pathTo: Invalid path description. Cannot find a vertex from the previousVertexInPath field"
 
 -- TODO: Not optimized. Doesn't work for negative numbers? (E.g. 1+2 = 3, sum is greater. -1+-2 = -3, sum is lesser)
-findPath_djikstra :: (Eq a,Num b,Ord b) => a -> AdjacencyGraph a b -> [DjikstraGraphBox a b]
+findPath_djikstra :: (Eq a,Num b,Ord b) => a -> EdgeGraph a b -> [DjikstraGraphBox a b]
 findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True] where
 	lengthAtLeast :: Int -> [a] -> Bool
 	lengthAtLeast 0 _        = True
@@ -214,7 +215,7 @@ findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True
 			initialBoxed
 		else
 			updateBoxed (permanentBoxCheapest $ foldl selectBoxed initialBoxed (toEdgesFrom (vertexOfBox $ head initialBoxed) graph)) where
-				-- The boxed values that are non permanent
+				-- The boxed labels that are non permanent
 				nonPermanentBoxed boxed = (filter (\(DjikstraGraphBox _ _ _ permanent) -> not permanent) boxed)
 
 				-- Extracts the vertex from a box
@@ -245,14 +246,14 @@ findPath_djikstra from graph = updateBoxed [DjikstraGraphBox from 0 Nothing True
 								Nothing  -> newBox : boxed
 						Nothing -> boxed
 
-exportData :: (a -> Binary.Word32) -> AdjacencyGraph a b -> Binary.Put
-exportData valueToWord graph = mapM_ serializeEdge graph where
+exportData :: (a -> Binary.Word32) -> EdgeGraph a b -> Binary.Put
+exportData labelToWord graph = mapM_ serializeEdge graph where
 	-- Function that serializes a single edge
 	serializeEdge edge = do
-		Binary.Put.putWord32be (valueToWord (getFrom edge))
-		Binary.Put.putWord32be (valueToWord (getTo edge))
+		Binary.Put.putWord32be (labelToWord (getFrom edge))
+		Binary.Put.putWord32be (labelToWord (getTo edge))
 
-importData :: (Binary.Word32 -> a) -> Binary.Get (AdjacencyGraph a Int)
+importData :: (Binary.Word32 -> a) -> Binary.Get (EdgeGraph a Int)
 importData wordToValue = do
 	-- If EOF
 	empty <- Binary.Get.isEmpty
@@ -260,7 +261,7 @@ importData wordToValue = do
 		-- Return an empty list encapsulated in the Binary.Get monad
 		return []
 	else do
-		-- Return a list of edges, recursively reading all the values from the file
+		-- Return a list of edges, recursively reading all the labels from the file
 		edge <- (fmap (GraphEdge) (liftM wordToValue Binary.Get.getWord32be) <*> (liftM wordToValue Binary.Get.getWord32be) <*> (pure 0))
 		edges <- importData wordToValue
 		return (edge:edges)
@@ -285,10 +286,10 @@ main = do
 	putStrLn $ "Order: "      ++ (show $ order graph)
 	putStrLn $ "Vertices: "   ++ (show $ vertices graph)
 	putStrLn $ "Edges of 5: " ++ (show $ edgesOf 5 graph)
-	putStrLn $ "To values from 1: " ++ (show $ toValuesFrom 1 graph)
-	putStrLn $ "Connected values: " ++ (show $ connectedValues graph)
-	putStrLn $ "Start values: " ++ (show $ startValues graph)
-	putStrLn $ "End values: "   ++ (show $ endValues graph)
+	putStrLn $ "To labels from 1: " ++ (show $ toLabelsFrom 1 graph)
+	putStrLn $ "Connected labels: " ++ (show $ connectedLabels graph)
+	putStrLn $ "Start labels: " ++ (show $ startLabels graph)
+	putStrLn $ "End labels: "   ++ (show $ endLabels graph)
 --}	--putStrLn $ "Walk max cost path: " ++ (show $ take 10 $ walk (getTo . (maximumBy (comparing getCost))) graph 'A')
 	--putStrLn $ "Paths from A to E: "  ++ (show $ findPaths 'A' 'E' graph)
 	putStrLn $ "Minimum Spanning Tree (Kruskal): "  ++ (show $ minimumSpanning_kruskal (comparing getCost) graph)
