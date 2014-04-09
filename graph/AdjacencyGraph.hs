@@ -12,12 +12,13 @@ import Data.Function (on)
 
 -- |Graph Edge structure. Represents the edges of a graph
 data VertexContainer a = VertexContainer{
+	vertexId        :: Int,
 	vertexLabel     :: a,
 	vertexNeighbors :: [a]
 } deriving (Eq)
 
 instance (Show a) => Show (VertexContainer a) where
-	show (VertexContainer label neighbors) = (show label) ++ ":[" ++ (show neighbors) ++ "]"
+	show (VertexContainer _ label neighbors) = (show label) ++ ":[" ++ (show neighbors) ++ "]"
 
 data Graph a = Graph [VertexContainer a] deriving (Eq,Show)
 
@@ -30,7 +31,7 @@ instance Graph.Graph Graph where
 	size (Graph vertices) = sum (map (length . vertexNeighbors) vertices)
 
 	-- |Edges in the graph
-	edges (Graph vertices) = concatMap (\(VertexContainer label neighbors) -> map (\edgeToLabel -> (label,edgeToLabel)) neighbors) vertices
+	edges (Graph vertices) = concatMap (\(VertexContainer _ label neighbors) -> map (\edgeToLabel -> (label,edgeToLabel)) neighbors) vertices
 
 	-- |Vertices in the graph
 	vertices (Graph vertices) = map vertexLabel vertices
@@ -39,45 +40,46 @@ instance Graph.Graph Graph where
 	order (Graph vertices) = length vertices
 
 	toLabelsFrom label graph = case vertexWithLabel label graph of
-		Just (VertexContainer _ neighbors) -> neighbors
+		Just (VertexContainer _ _ neighbors) -> neighbors
 		Nothing     -> []
 
 	hasEdge from to graph = case vertexWithLabel from graph of
 		Just vertex -> elem to (vertexNeighbors vertex)
 		Nothing       -> False
 
-	withVertex vertex (Graph vertices) = Graph (ListUtil.addUniqueOf ((==) `on` vertexLabel) (VertexContainer vertex []) vertices)
+	--TODO: Needs better implementation. (order graph) makes it having higher complexity
+	withVertex label graph@(Graph vertices) = Graph (ListUtil.addUniqueOf ((==) `on` vertexLabel) (VertexContainer (Graph.order graph) label []) vertices)
 
 	withoutVertex label (Graph vertices) = Graph (ListUtil.filterFirst (((==) label) . vertexLabel) updatedGraph)
-		where updatedGraph = map (\oldVertex@(VertexContainer l oldNeighbors) -> VertexContainer l (delete label oldNeighbors)) vertices
+		where updatedGraph = map (\oldVertex@(VertexContainer i l oldNeighbors) -> VertexContainer i l (delete label oldNeighbors)) vertices
 
 	withEdge from to graph@(Graph vertices) = Graph (map addEdgeToVertex vertices)
-		where addEdgeToVertex vertex@(VertexContainer label neighbors) = 
+		where addEdgeToVertex vertex@(VertexContainer i label neighbors) = 
 			if label == from then
-				VertexContainer label (ListUtil.addUnique to neighbors)
+				VertexContainer i label (ListUtil.addUnique to neighbors)
 			else
 				vertex
 
 	withoutEdge from to graph@(Graph vertices) = Graph (map removeEdgeFromVertex vertices)
-		where removeEdgeFromVertex vertex@(VertexContainer label neighbors) = 
+		where removeEdgeFromVertex vertex@(VertexContainer i label neighbors) = 
 			if label == from then
-				VertexContainer label (ListUtil.filterFirst (==to) neighbors)
+				VertexContainer i label (ListUtil.filterFirst (==to) neighbors)
 			else
 				vertex
+
 
 vertexWithLabel :: Eq a => a -> Graph a -> Maybe (VertexContainer a)
 vertexWithLabel label (Graph vertices) = find (((==) label) . vertexLabel) vertices
 
--- |Graph with specific vertex added
-withVertex' :: Eq a => VertexContainer a -> Graph a -> Graph a
-withVertex' vertex@(VertexContainer label neighbors) graph@(Graph vertices) = case vertexWithLabel label graph of
-	Just existingVertex@(VertexContainer _ existingNeighbors) -> Graph ((VertexContainer label (union existingNeighbors neighbors)) : (delete existingVertex vertices))
-	Nothing -> Graph (vertex:vertices)
+withVertexWithEdges :: Eq a => a -> [a] -> Graph a -> Graph a
+withVertexWithEdges label neighbors graph@(Graph vertices) = case vertexWithLabel label graph of
+	Just existingVertex@(VertexContainer i _ existingNeighbors) -> Graph ((VertexContainer i label (union existingNeighbors neighbors)) : (delete existingVertex vertices))
+	Nothing -> Graph ((VertexContainer (Graph.order graph) label neighbors):vertices)
 
 -- | Neighbors that `from` can reach to
 fromLabelsTo :: Eq a => a -> Graph a -> [a]
 fromLabelsTo label (Graph vertices) = foldl f [] vertices
-	where f fromLabels (VertexContainer from neighbors) =
+	where f fromLabels (VertexContainer _ from neighbors) =
 		if elem label neighbors then
 			from : fromLabels
 		else
@@ -99,10 +101,11 @@ main = do
 	putStrLn $ "From labels to G: " ++ (show $ fromLabelsTo 'G' graph)
 	putStrLn $ "Has edge A to B: "  ++ (show $ Graph.hasEdge 'A' 'B' graph)
 	putStrLn $ "Walk using head: "  ++ (show $ Graph.walk' (Just . head) 'A' graph)
+	putStrLn $ "With C -> [A,B]: "  ++ (show $ withVertexWithEdges 'B' "ABC" graph)
 	where
 		graph = Graph (
-			VertexContainer 'A' ['B'] : 
-			VertexContainer 'B' ['C'] : 
-			VertexContainer 'C' [] : 
+			VertexContainer 0 'A' ['B'] : 
+			VertexContainer 1 'B' ['C'] : 
+			VertexContainer 2 'C' [] : 
 
 			[])

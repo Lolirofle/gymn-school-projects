@@ -69,5 +69,6 @@ class Edge e where
 
 class Edge e => DirectedEdge e
 class Edge e => UndirectedEdge e
+class Edge e => WeightedEdge e
 
 data LabeledEdge label = LabeledEdge label
